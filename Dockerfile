@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Upgrade apt packages and install required dependencies
-RUN pip install --upgrade runpod
+RUN pip install --upgrade runpod && \
     apt update && \
     apt upgrade -y && \
     apt install -y \
