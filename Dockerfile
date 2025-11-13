@@ -67,8 +67,7 @@ RUN git clone https://github.com/ashleykleynhans/runpod-worker-real-esrgan.git &
     pip3 install git+https://github.com/XPixelGroup/BasicSR.git && \
     pip3 install -r requirements.txt && \
     pip3 install -e . --no-deps && \
-    python3 create_test_json.py && \
-    python3 -u handler.py
+    python3 create_test_json.py
 
 # Docker container start script
 ADD start.sh /start.sh
