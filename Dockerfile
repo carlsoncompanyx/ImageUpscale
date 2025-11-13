@@ -1,5 +1,5 @@
 ARG CUDA_VERSION="12.4.1"
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04
+FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_PREFER_BINARY=1 \
