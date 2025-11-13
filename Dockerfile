@@ -4,11 +4,12 @@ FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_PREFER_BINARY=1 \
     PYTHONUNBUFFERED=1
-
+    
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Upgrade apt packages and install required dependencies
-RUN apt update && \
+RUN pip install --upgrade runpod
+    apt update && \
     apt upgrade -y && \
     apt install -y \
       python3-dev \
