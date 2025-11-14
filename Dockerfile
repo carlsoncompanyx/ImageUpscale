@@ -1,15 +1,14 @@
 ARG CUDA_VERSION="12.4.1"
-FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_PREFER_BINARY=1 \
     PYTHONUNBUFFERED=1
-    
+
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Upgrade apt packages and install required dependencies
-RUN pip install --upgrade runpod && \
-    apt update && \
+RUN apt update && \
     apt upgrade -y && \
     apt install -y \
       python3-dev \
@@ -67,7 +66,8 @@ RUN git clone https://github.com/ashleykleynhans/runpod-worker-real-esrgan.git &
     pip3 install git+https://github.com/XPixelGroup/BasicSR.git && \
     pip3 install -r requirements.txt && \
     pip3 install -e . --no-deps && \
-    python3 create_test_json.py
+    python3 create_test_json.py && \
+    python3 -u handler.py
 
 # Docker container start script
 ADD start.sh /start.sh
