@@ -232,8 +232,37 @@ def upscaling_api(input):
     # Clean up temporary images
     os.remove(source_image_path)
 
+    # ---------------------------------------------
+    # Upload directly to Printify
+    # ---------------------------------------------
+    import requests
+
+    # Decode base64 → raw bytes
+    final_bytes = base64.b64decode(result_image)
+
+    # Upload to Printify
+    files = {"file": (f"upscaled_{unique_id}.jpg", final_bytes, "image/jpeg")}
+    headers = {"Authorization": f"Bearer {os.getenv('PRINTIFY_TOKEN')}"}
+
+    pr = requests.post(
+        "https://api.printify.com/v1/uploads/images.json",
+        headers=headers,
+        files=files
+    )
+
+    if pr.status_code != 200:
+        return {
+            "error": f"Printify upload failed {pr.status_code}: {pr.text}",
+            "refresh_worker": False
+        }
+
+    url = pr.json().get("src")
+
     return {
-        'image': result_image
+        "output": {
+            "status": "ok",
+            "printify_url": url
+        }
     }
 
 
