@@ -3,20 +3,18 @@ import io
 import uuid
 import base64
 import cv2
-import glob
 import traceback
 import runpod
+import requests
+
 from runpod.serverless.utils.rp_validator import validate
 from runpod.serverless.modules.rp_logger import RunPodLogger
 from basicsr.archs.rrdbnet_arch import RRDBNet
-from basicsr.utils.download_util import load_file_from_url
 from realesrgan import RealESRGANer
-# from realesrgan.archs.srvgg_arch import SRVGGNetCompac
 from PIL import Image
 from schemas.input import INPUT_SCHEMA
 
 # Use /workspace for the Docker volume mount path
-# otherwise use the current working directory
 worker_build_env = os.getenv('WORKER_BUILD_ENV')
 if worker_build_env:
     VOLUME_PATH = '/workspace'
@@ -34,16 +32,16 @@ logger = RunPodLogger()
 # Application Functions                                                        #
 # ---------------------------------------------------------------------------- #
 def upscale(
-        source_image_path,
-        image_extension,
-        model_name='RealESRGAN_x4plus',
-        outscale=4,
-        face_enhance=False,
-        tile=0,
-        tile_pad=10,
-        pre_pad=0,
-        half=False,
-        denoise_strength=0.5
+    source_image_path,
+    image_extension,
+    model_name='RealESRGAN_x4plus',
+    outscale=4,
+    face_enhance=False,
+    tile=0,
+    tile_pad=10,
+    pre_pad=0,
+    half=False,
+    denoise_strength=0.5
 ):
     """
     model_name options:
@@ -51,27 +49,13 @@ def upscale(
         - RealESRNet_x4plus
         - RealESRGAN_x4plus_anime_6B
         - RealESRGAN_x2plus
-        - realesr-animevideov3
-        - realesr-general-x4v3
+        - 4x-UltraSharp
+        - lollypop
 
     image_extension: .jpg or .png
-
     outscale: The final upsampling scale of the image
-
-    face_enhance: Whether or not to enhance the face
-
-    tile: Tile size, 0 for no tile during testing
-
-    tile_pad: Tile padding (default = 10)
-
-    pre_pad: Pre padding size at each border
-
-    denoise_strength: 0 for weak denoise (keep noise)
-                      1 for strong denoise ability
-                      Only used for the realesr-general-x4v3 model
     """
 
-    # determine models according to model names
     model_name = model_name.split('.')[0]
 
     if image_extension == '.jpg':
@@ -79,58 +63,28 @@ def upscale(
     elif image_extension == '.png':
         image_format = 'PNG'
     else:
-        raise ValueError(f'Unsupported image type, must be either JPEG or PNG')
+        raise ValueError('Unsupported image type, must be either JPEG or PNG')
 
-    if model_name == 'RealESRGAN_x4plus':  # x4 RRDBNet model
+    if model_name in ['RealESRGAN_x4plus', 'RealESRNet_x4plus', '4x-UltraSharp', 'lollypop']:
         model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
         netscale = 4
-    elif model_name == 'RealESRNet_x4plus':  # x4 RRDBNet model
-        model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
-        netscale = 4
-    elif model_name == 'RealESRGAN_x4plus_anime_6B':  # x4 RRDBNet model with 6 blocks
+    elif model_name == 'RealESRGAN_x4plus_anime_6B':
         model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=6, num_grow_ch=32, scale=4)
         netscale = 4
-    elif model_name == 'RealESRGAN_x2plus':  # x2 RRDBNet model
+    elif model_name == 'RealESRGAN_x2plus':
         model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
         netscale = 2
-    # TODO: Implement these
-    # elif model_name == 'realesr-animevideov3':  # x4 VGG-style model (XS size)
-    #     model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=16, upscale=4, act_type='prelu')
-    #     netscale = 4
-    #     file_url = ['https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth']
-    # elif model_name == 'realesr-general-x4v3':  # x4 VGG-style model (S size)
-    #     model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=4, act_type='prelu')
-    #     netscale = 4
-    #     file_url = [
-    #         'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-wdn-x4v3.pth',
-    #         'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth'
-    #     ]
-    elif model_name == '4x-UltraSharp':  # x4 RRDBNet model
-        model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
-        netscale = 4
-    elif model_name == 'lollypop':  # x4 RRDBNet model
-        model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
-        netscale = 4
     else:
         raise ValueError(f'Unsupported model: {model_name}')
 
-    # determine model paths
     model_path = os.path.join(MODELS_PATH, model_name + '.pth')
 
     if not os.path.isfile(model_path):
-        raise Exception(f'Could not find model: {model_path}')
-
-    # use dni to control the denoise strength
-    dni_weight = None
-    # if model_name == 'realesr-general-x4v3' and denoise_strength != 1:
-    #     wdn_model_path = model_path.replace('realesr-general-x4v3', 'realesr-general-wdn-x4v3')
-    #     model_path = [model_path, wdn_model_path]
-    #     dni_weight = [denoise_strength, 1 - denoise_strength]
+        raise RuntimeError(f'Could not find model: {model_path}')
 
     upsampler = RealESRGANer(
         scale=netscale,
         model_path=model_path,
-        dni_weight=dni_weight,
         model=model,
         tile=tile,
         tile_pad=tile_pad,
@@ -139,7 +93,8 @@ def upscale(
         gpu_id=GPU_ID
     )
 
-    if face_enhance:  # Use GFPGAN for face enhancement
+    face_enhancer = None
+    if face_enhance:
         from gfpgan import GFPGANer
         face_enhancer = GFPGANer(
             model_path=GFPGAN_MODEL_PATH,
@@ -155,7 +110,7 @@ def upscale(
         raise RuntimeError(f'Source image ({source_image_path}) is corrupt')
 
     try:
-        if face_enhance:
+        if face_enhance and face_enhancer is not None:
             _, _, output = face_enhancer.enhance(img, has_aligned=False, only_center_face=False, paste_back=True)
         else:
             output, _ = upsampler.enhance(img, outscale=outscale)
@@ -169,26 +124,24 @@ def upscale(
         return base64.b64encode(image_data).decode('utf-8')
 
 
-def determine_file_extension(image_data):
-    image_extension = None
-
+def determine_file_extension_from_b64(image_b64: str) -> str:
+    """
+    Very simple heuristic based on base64 header.
+    Defaults to PNG if unsure.
+    """
     try:
-        if image_data.startswith('/9j/'):
-            image_extension = '.jpg'
-        elif image_data.startswith('iVBORw0Kg'):
-            image_extension = '.png'
-        else:
-            # Default to png if we can't figure out the extension
-            image_extension = '.png'
-    except Exception as e:
-        image_extension = '.png'
-
-    return image_extension
+        if image_b64.startswith('/9j/'):
+            return '.jpg'
+        if image_b64.startswith('iVBORw0KG'):
+            return '.png'
+    except Exception:
+        pass
+    return '.png'
 
 
 def upscaling_api(input):
     if not os.path.exists(TMP_PATH):
-        os.makedirs(TMP_PATH)
+        os.makedirs(TMP_PATH, exist_ok=True)
 
     unique_id = uuid.uuid4()
     source_image_data = input['source_image']
@@ -200,17 +153,16 @@ def upscaling_api(input):
     pre_pad = input['pre_pad']
     half = input['half']
 
-    # Decode the source image data
-    source_image = base64.b64decode(source_image_data)
-    source_file_extension = determine_file_extension(source_image_data)
+    source_file_extension = determine_file_extension_from_b64(source_image_data)
+    source_bytes = base64.b64decode(source_image_data)
     source_image_path = f'{TMP_PATH}/source_{unique_id}{source_file_extension}'
 
-    # Save the source image to disk
-    with open(source_image_path, 'wb') as source_file:
-        source_file.write(source_image)
+    # Save original to disk
+    with open(source_image_path, 'wb') as f:
+        f.write(source_bytes)
 
     try:
-        result_image = upscale(
+        result_image_b64 = upscale(
             source_image_path,
             source_file_extension,
             model_name,
@@ -222,48 +174,83 @@ def upscaling_api(input):
             half
         )
     except Exception as e:
-        logger.error(f'An exception was raised: {e}')
+        logger.error(f'Upscale exception: {e}')
+        logger.error(traceback.format_exc())
+
+        # Clean up
+        if os.path.exists(source_image_path):
+            os.remove(source_image_path)
 
         return {
             'error': traceback.format_exc(),
             'refresh_worker': True
         }
 
-    # Clean up temporary images
-    os.remove(source_image_path)
+    # Clean up temp source
+    if os.path.exists(source_image_path):
+        os.remove(source_image_path)
 
-    # ---------------------------------------------
-    # Upload directly to Printify
-    # ---------------------------------------------
-    import requests
+    # ------------------------------------------------------------------
+    # Upload result to Printify
+    # ------------------------------------------------------------------
+    printify_token = os.getenv('PRINTIFY_TOKEN')
 
-    # Decode base64 → raw bytes
-    final_bytes = base64.b64decode(result_image)
-
-    # Upload to Printify
-    files = {"file": (f"upscaled_{unique_id}.jpg", final_bytes, "image/jpeg")}
-    headers = {"Authorization": f"Bearer {os.getenv('PRINTIFY_TOKEN')}"}
-
-    pr = requests.post(
-        "https://api.printify.com/v1/uploads/images.json",
-        headers=headers,
-        files=files
-    )
-
-    if pr.status_code != 200:
+    if not printify_token:
+        # No token set -> don't crash, just return base64
         return {
-            "error": f"Printify upload failed {pr.status_code}: {pr.text}",
-            "refresh_worker": False
+            "output": {
+                "status": "missing_printify_token",
+                "image_base64": result_image_b64
+            }
         }
 
-    url = pr.json().get("src")
-
-    return {
-        "output": {
-            "status": "ok",
-            "printify_url": url
+    try:
+        final_bytes = base64.b64decode(result_image_b64)
+        files = {
+            "file": (f"upscaled_{unique_id}.jpg", final_bytes, "image/jpeg")
         }
-    }
+        headers = {
+            "Authorization": f"Bearer {printify_token}"
+        }
+
+        pr = requests.post(
+            "https://api.printify.com/v1/uploads/images.json",
+            headers=headers,
+            files=files,
+            timeout=60
+        )
+
+        if pr.status_code != 200:
+            logger.error(f"Printify upload failed {pr.status_code}: {pr.text}")
+            return {
+                "output": {
+                    "status": "printify_error",
+                    "status_code": pr.status_code,
+                    "message": pr.text,
+                    "image_base64": result_image_b64
+                }
+            }
+
+        url = pr.json().get("src")
+
+        return {
+            "output": {
+                "status": "ok",
+                "printify_url": url,
+                "image_base64": result_image_b64
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Printify exception: {e}")
+        logger.error(traceback.format_exc())
+        return {
+            "output": {
+                "status": "printify_exception",
+                "message": str(e),
+                "image_base64": result_image_b64
+            }
+        }
 
 
 # ---------------------------------------------------------------------------- #
@@ -282,8 +269,4 @@ def handler(event):
 
 if __name__ == "__main__":
     logger.info('Starting RunPod Serverless...')
-    runpod.serverless.start(
-        {
-            'handler': handler
-        }
-    )
+    runpod.serverless.start({"handler": handler})
