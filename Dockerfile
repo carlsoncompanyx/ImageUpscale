@@ -38,15 +38,10 @@ RUN apt update && \
 WORKDIR /workspace
 RUN mkdir -p /workspace/models/ESRGAN && \
     cd /workspace/models/ESRGAN && \
-    # Download the official Real-ESRGAN models
     wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth && \
     wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.1/RealESRNet_x4plus.pth && \
     wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth && \
     wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth && \
-    # Download additional models from Huggingface
-    # wget https://huggingface.co/snappic/upscalers/resolve/main/4x-UltraSharp.pth && \
-    # wget https://huggingface.co/snappic/upscalers/resolve/main/lollypop.pth && \
-    # Download the GFPGAN models
     mkdir -p /workspace/models/GFPGAN && \
     wget -O /workspace/models/GFPGAN/GFPGANv1.3.pth https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth
 
@@ -55,24 +50,20 @@ ARG INDEX_URL="https://download.pytorch.org/whl/cu124"
 ARG TORCH_VERSION="2.6.0+cu124"
 RUN pip3 install --no-cache-dir torch==${TORCH_VERSION} torchvision torchaudio --index-url ${INDEX_URL}
 
-# 1. Clone the worker repo
-# 2. Install requirements
-# 3. Setup the local requirements
-# 4. Create test_input.json file for test inference
-# 5. Run test inference using handler.py to cache the models
-ENV WORKER_BUILD_ENV="docker"
+# Clone the worker repo and install
 RUN git clone https://github.com/ashleykleynhans/runpod-worker-real-esrgan.git && \
     cd runpod-worker-real-esrgan && \
     pip3 install git+https://github.com/XPixelGroup/BasicSR.git && \
     pip3 install -r requirements.txt && \
-    pip3 install -e . --no-deps && \
-    python3 create_test_json.py && \
-    python3 -u handler.py
+    pip3 install -e . --no-deps
 
-# Docker container start script
-ADD start.sh /start.sh
+# DO NOT RUN handler.py DURING BUILD
+# DO NOT RUN create_test_json.py
+
+# Add your custom handler (with Printify integration)
 ADD handler.py /workspace/runpod-worker-real-esrgan/handler.py
+ADD start.sh /start.sh
 
-# Start the container
 RUN chmod +x /start.sh
-ENTRYPOINT /start.sh
+
+ENTRYPOINT ["/start.sh"]
