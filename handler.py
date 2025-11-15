@@ -191,12 +191,11 @@ def upscaling_api(input):
         os.remove(source_image_path)
 
     # ------------------------------------------------------------------
-    # Upload result to Printify
+    # Upload result to Printify (CORRECT FORMAT)
     # ------------------------------------------------------------------
     printify_token = os.getenv('PRINTIFY_TOKEN')
 
     if not printify_token:
-        # No token set -> don't crash, just return base64
         return {
             "output": {
                 "status": "missing_printify_token",
@@ -205,18 +204,20 @@ def upscaling_api(input):
         }
 
     try:
-        final_bytes = base64.b64decode(result_image_b64)
-        files = {
-            "file": (f"upscaled_{unique_id}.jpg", final_bytes, "image/jpeg")
-        }
         headers = {
-            "Authorization": f"Bearer {printify_token}"
+            "Authorization": f"Bearer {printify_token}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "file_name": f"upscaled_{unique_id}.jpg",
+            "contents": result_image_b64   # <-- BASE64 STRING, Printify requires this
         }
 
         pr = requests.post(
             "https://api.printify.com/v1/uploads/images.json",
             headers=headers,
-            files=files,
+            json=payload,
             timeout=60
         )
 
@@ -251,6 +252,7 @@ def upscaling_api(input):
                 "image_base64": result_image_b64
             }
         }
+
 
 
 # ---------------------------------------------------------------------------- #
