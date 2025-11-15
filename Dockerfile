@@ -50,17 +50,19 @@ ARG INDEX_URL="https://download.pytorch.org/whl/cu124"
 ARG TORCH_VERSION="2.6.0+cu124"
 RUN pip3 install --no-cache-dir torch==${TORCH_VERSION} torchvision torchaudio --index-url ${INDEX_URL}
 
-# Clone the worker repo and install
+# Clone the worker repo and install Python deps
 RUN git clone https://github.com/ashleykleynhans/runpod-worker-real-esrgan.git && \
     cd runpod-worker-real-esrgan && \
     pip3 install git+https://github.com/XPixelGroup/BasicSR.git && \
     pip3 install -r requirements.txt && \
-    pip3 install -e . --no-deps
+    pip3 install -e . --no-deps && \
+    pip3 install requests
 
-# DO NOT RUN handler.py DURING BUILD
-# DO NOT RUN create_test_json.py
+# IMPORTANT:
+# Do NOT run handler.py or create_test_json.py during build.
+# The GPU and external APIs (Printify) should only be used at runtime, not at build time.
 
-# Add your custom handler (with Printify integration)
+# Add your custom handler + start script
 ADD handler.py /workspace/runpod-worker-real-esrgan/handler.py
 ADD start.sh /start.sh
 
