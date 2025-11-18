@@ -36,7 +36,7 @@ RUN apt update && \
 
 # Install the models
 WORKDIR /workspace
-RUN mkdir -p /workspace/models/ESRGAN && \
+RUN mkdir -p /workspace/runpod-worker-real-esrgan/models/ESRGAN && \
     cd /workspace/models/ESRGAN && \
     wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth && \
     wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.1/RealESRNet_x4plus.pth && \
